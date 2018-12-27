@@ -23,6 +23,7 @@ class Pipeline:
     def retrieve_data(self):
         with open('./data/driving_log.csv') as csvfile:
             reader = csv.reader(csvfile)
+            # The csv file from Udacity, has a first line that needs to be ignored.
             next(reader)
             for line in reader:
                 self.csv_lines.append(line)
@@ -32,11 +33,10 @@ class Pipeline:
         images = []
         measurements = []
 
+        # Read left, centre and right image.
         for image_selection in range(0,3):
-            # print("Batch : ", batch_sample[image_selection])
             filename = batch_sample[image_selection].split('/')[-1]
             local_path = './data/IMG/' + filename
-            # print("Working on : ", local_path)
             image = cv2.imread(local_path)
             if image is None:
                 print("Image was not read : ", local_path)
@@ -47,6 +47,7 @@ class Pipeline:
             image = cv2.resize(image, (160, 70));
             images.append(image)			
 
+        # Adding correction factor for the measurements of the left and right images
         measurement = float(batch_sample[3])
         measurements.append(measurement)
         measurements.append(measurement + 0.2)
@@ -55,6 +56,7 @@ class Pipeline:
         augmented_images = []
         augmented_measurements = []
 
+        # Flip the images so that it works for the right turns as well.
         for image, measurement in zip(images, measurements):
             augmented_images.append(image)
             augmented_measurements.append(measurement)
@@ -65,38 +67,36 @@ class Pipeline:
 
         return augmented_images, augmented_measurements
   
+    # To prevent loading all the images in the data at once.
     def batch_generator(self, lines, batch_size=128):
         num_samples = len(lines)
-        # print("Batch_gen : ", num_samples)
         while 1:
             shuffle(lines)
             for offset in range(0, num_samples, batch_size):
                 batch_samples = lines[offset:offset + batch_size]
-                images, measurements = [], []
+                images = []
+                measurements = []
 
                 for batch_sample in batch_samples:
                     images, measurements = self.process_batch_sample(batch_sample)
 
                 X_train, y_train = np.array(images), np.array(measurements)
-                # print('success')
                 yield sklearn.utils.shuffle(X_train, y_train)
 
+    # Split samples into train and valid bins
     def split_samples(self):
         self.train_samples, self.valid_samples =  train_test_split(self.csv_lines, test_size = 0.2)
-        # print("Train : ", len(self.train_samples), "Valid : ", len(self.valid_samples))
 
+    # Generator for the training data
     def train_gen(self, batch_size = 128):
-        # print("Train gen")
         return self.batch_generator(self.train_samples, batch_size)
 
+    # Generator for the validation data
     def valid_gen(self, batch_size = 128):
-        # print("Valid gen")
         return self.batch_generator(self.valid_samples, batch_size)
 
     def run(self):
         self.split_samples()
-        # print(len(self.train_samples), " : ", len(self.valid_samples))
-        # print('success 1')
         self.model.fit_generator(self.train_gen(),
                                  steps_per_epoch = len(self.train_samples) * 2,
                                  epochs = self.epochs,
@@ -104,6 +104,7 @@ class Pipeline:
                                  validation_steps = len(self.valid_samples))
         self.model.save('model.h5')
 
+# Model based on the Nvidia's paper: https://devblogs.nvidia.com/deep-learning-self-driving-cars/
 def model():
     model = Sequential()
     model.add(Lambda(lambda x: (x / 127.5) - 1.0, input_shape = (70, 160, 3)))
@@ -126,7 +127,6 @@ def model():
 def main():
     
     pipeline = Pipeline(model(), epochs = 2)
-
     pipeline.retrieve_data()
     pipeline.run()
 
